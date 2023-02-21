@@ -1,3 +1,7 @@
+"""
+Environment for reinforcement learning with carla
+"""
+
 import sys
 import os
 import glob
@@ -48,7 +52,16 @@ control_zero.hand_brake = False
 #    pass
 
 class CEnvAgent():
+    """Class that contains info and carla objects related to an agent"""
     def __init__(self, name: str, vehicle_description: Tuple[str, Dict[str, Any]], sensor_description_list: List[Dict[str, Any]]):
+        """
+        Constructor
+
+        :param str name: Name id of the agent
+        :param Tuple[str, Dict[str, Any]] vehicle_description: A tuple with the blueprint name of the vehicle and a dict with its config
+        :param List[Dict[str, Any]] sensor_description_list: A list with the description of each sensor of the agent. See sensors() from carla leaderboards
+        """
+
         self.actor: carla.Vehicle = None
         self.name: str = name
         self.vehicle_description: Tuple[str, Dict[str, Any]] = vehicle_description
@@ -250,18 +263,22 @@ class CarlaEnv(gym.Env):
                     vehicle_description: List[Tuple[str, Dict[str, Any]]], 
                     camera_types: List[str] = ["rgb"], 
                     input_noise_function_list: Optional[Callable[[float, float, Optional[Dict[str, Any]]], Tuple[float, float]]] = None
-                    
                 ) -> None:
         super(CarlaEnv, self).__init__()
-        '''
-        self.observation_shape = (3, 128, 256, 3)
-        self.observation_space = gym.spaces.box.Box(low = np.zeros(self.observation_shape), 
-                                            high = np.ones(self.observation_shape))
-        # Define an action space ranging from 0 to 4
-        self.action_shape = (2)
-        self.action_space = gym.spaces.box.Box(low = -np.ones(self.action_shape), 
-                                            high = np.ones(self.action_shape))
-        '''
+        """
+        Constructor
+
+        :param List[str] agent_names: A list with the name ids of the agents
+        :param sensor_descriptions: A list with one list of sensor descriptions for each agent. See sensors() from carla leaderboards
+        :param vehicle_description: A list with a tuple for each agent with the blueprint name of the vehicle and a dict with its config
+        :param List[str] camera_types: A list with the camera types that you want the agent to have: "rgb", "semantic_segmentation", "depth"
+        :param input_noise_function_list: (Optional) A list with a function for each agent
+                that will introduce noise in its controls
+                The params of that function will be:
+                    :param float steer: steer to be modified
+                    :param float throttle: throttle to be modified
+                    :return: a tuple with the modified steer and throttle
+        """
         self._grp: GlobalRoutePlanner = None
         self.change_map_counter: int = 0
         self.first_episode: bool = True
@@ -307,6 +324,17 @@ class CarlaEnv(gym.Env):
     # Read env
     # Act
     def step(self, control: carla.VehicleControl, input_noise: bool = False) -> Tuple[List[Dict[str, Any]], List[float], List[bool], List[Dict[str, Any]]]:
+        """
+        This function takes a list of vehicle controls, apply each control for each agent and advances the environment one step
+
+        :param control: A list of carla vehicle controls, one for each agent
+        :param bool input_noise: A flag that indicates if the input noise function will be used to alter the controls
+        :return: A tuple with
+            - data_dict_list: One dictionary for each agent with the data from each sensor. The key to access the data of each sensor will be the id of that senor (except cameras)
+            - reward: One reward value for each agent
+            - game_over: A flag for each agent that indicates if has crashed or failed
+            - info_list: One dictionary for each agent with any data that you could ever wish for 
+        """
         self.take_action(control, input_noise)
 
         self._tick()
@@ -359,6 +387,14 @@ class CarlaEnv(gym.Env):
     # Change weather 
     # Respawn actors (different position)
     def reset(self, change_map: bool = False) -> Tuple[List[Dict[str, Any]], List[Dict[str, Any]]]:
+        """
+        This function resets the environment and starts a new episode
+
+        :param bool change_map: A flag that indicates if the simulator should change its map
+        :return: A tuple with
+            - data_dict_list: One dictionary for each agent with the data from each sensor. The key to access the data of each sensor will be the id of that senor (except cameras)
+            - info_list: One dictionary for each agent with any data that you could ever wish for 
+        """
         if self.change_map_counter >= NUM_EPISODES_FOR_MAP_CHANGE  or self.first_episode or change_map:
             if self.first_episode:
                 self.first_episode = False
@@ -447,6 +483,16 @@ class CarlaEnv(gym.Env):
         
     # Render the environment to the screen
     def render(self, idx: int = 0, mode: str ='rgb', image_transforms: List[Callable[[np.ndarray], np.ndarray]] = []) -> None:
+        """
+        This function renders the data from the cameras with opencv
+
+        :param int idx: idx of the agent to be rendered
+        :param str mode: type of camera that is wanted to be rendered. If "all" is specified, every type will be rendered and stacked
+        :param image_trnasforms: A list of functions to modify the image of each camera mode to be rendered
+            The params and return of the function will be:
+                :param input_image: a numpy array with the input image
+                :return: The image modified by the function
+        """
         img = None
         image_transform = None
         if len(image_transforms) == 1:
@@ -470,9 +516,18 @@ class CarlaEnv(gym.Env):
     # 1- Destroy actors
     # 2- Close connection
     def close(self) -> None:
+        """
+        A function that closes the environment cleanly
+        """
         self._cleanup()
 
     def save_current_step(self, save_state: bool = True, save_info: bool = True) -> None:
+        """
+        A function that saves the information a the current step
+
+        :param bool save_state: A flag that indicates if the state (sensors) of each agent must be saved
+        :param bool save_info: A flag that indicates if the info dict of each agent must be saved
+        """
         for idx, agent in enumerate(self.agent_list):
             agent_path = os.path.realpath(os.path.dirname(__file__)) + "\\..\\log\\" + agent.get_name()
             state = agent.get_data_dict()

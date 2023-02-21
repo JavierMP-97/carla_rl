@@ -12,8 +12,21 @@ import time
 #env = CarlaEnv(agent.sensors())
 
 class RLTraining():
+    """A class that executes a custom loop for training or testing agents in a random way in the carla environment
+    
+        Special keybinds:
+        :keybind Q: Close the environment and exit the loop
+        :keybind W: Resets the environment
+        :keybind E: Resets the environment and changes the simulator map
+    """
     
     def __init__(self, env: gym.Env, agent_list: List[Tuple[str, AutonomousAgent]]) -> None:
+        """
+        Constructor
+        
+        :param env: A carla environment
+        :param agen_list: A list which contains a tuple for each agent, with its string id and the agent object
+        """
         self.env: gym.Env = env
         self.agent_list: List[Tuple[str, AutonomousAgent]] = agent_list
         '''
@@ -24,7 +37,15 @@ class RLTraining():
         '''
                     
     def run(self, save_data: bool = True, render: bool = False, render_mode: str = "none", input_noise: bool = False) -> None:
-        #try:
+        """
+        A function that starts the execution loop
+
+        :param bool save_data: A flag that indicates if the step data must be saved
+        :param bool render: A flag that indicates if the state must be rendered
+        :param str render: A string that indicates the camera type that will be rendered. If "all" is specified, every type will be rendered and stacked
+        :param bool input_noise: A flag that indicates if the loop will apply noise to the controls of the agents
+        """
+
         runing = True
         key_pressed = {}
         key_pressed["e"] = False
@@ -53,7 +74,7 @@ class RLTraining():
             key_pressed["e"] = False
             key_pressed["w"] = False
             key_pressed["q"] = False
-            # New episode
+
             while not self.game_over_list[0] and not key_pressed["e"] and not key_pressed["w"]:
                 
 
@@ -87,10 +108,5 @@ class RLTraining():
             self.game_over_list[0] = False
             
         self.env.close()
-        #agent.destroy()
-        #except Exception as e:
-        #    print(e)
-        #    env.close()
-
 
 #save_data(agent_list, state_list, reward_list, game_over_list, info_list)

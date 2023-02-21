@@ -1,4 +1,5 @@
 
+.vscode/
 # Models
 *.h5
 
