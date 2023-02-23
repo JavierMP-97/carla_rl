@@ -56,9 +56,9 @@ class DataCollection():
             key_pressed["w"] = True
         def press_q():
             key_pressed["q"] = True
-        keyboard.on_press_key("e", lambda e: press_e() )
-        keyboard.on_press_key("w", lambda e: press_w() )
-        keyboard.on_press_key("q", lambda e: press_q() )
+        keyboard.on_press_key("ctrl+e", lambda e: press_e() )
+        keyboard.on_press_key("ctrl+w", lambda e: press_w() )
+        keyboard.on_press_key("ctrl+q", lambda e: press_q() )
         self.game_over_list = [False]     
 
         episodes = 0

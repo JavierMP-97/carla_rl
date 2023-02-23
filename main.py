@@ -1,6 +1,6 @@
 from rl.rl_training import RLTraining
 from rl.data_collecting import DataCollection
-from carla_env.carla_training_env import CarlaEnv
+from carla_env.carla_env import CarlaEnv
 from carla_agents.rl_agent import RLAgent
 from carla_agents.auto_agent import AutoAgent
 from carla_agents.mario_agent import MarioAgent
