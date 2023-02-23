@@ -69,7 +69,7 @@ def get_entry_point():
     return 'RLAgent'
 
 class AutoAgent(AutonomousAgent):
-    def __init__(self, carla_host, carla_port, debug=False):
+    def __init__(self, carla_host, carla_port, debug=False, target_speed = 5):
         super(AutoAgent, self).__init__(carla_host, carla_port, debug)
         self.long_pid = ModPIDLongitudinalController()
         self.lat_pid = ModPIDLateralController()
@@ -77,6 +77,7 @@ class AutoAgent(AutonomousAgent):
         self.max_brake = 0.3
         self.max_throt = 0.75
         self.max_steer = 0.8
+        self.target_speed = target_speed
 
     def setup(self, path_to_conf_file):
         """
@@ -87,9 +88,9 @@ class AutoAgent(AutonomousAgent):
         self.track = Track.SENSORS
         
     def sensors(self):  # pylint: disable=no-self-use
-        sensors = [ {'type': 'sensor.camera.rgb', 'x': 1.2, 'y': -0.25, 'z': 1.3, 'roll': 0.0, 'pitch': 0.0, 'yaw': -45.0, 'width': 254, 'height': 254, 'fov': 90, 'id': 'left'},
-                    {'type': 'sensor.camera.rgb', 'x': 1.3, 'y': 0.0, 'z': 1.3, 'roll': 0.0, 'pitch': 0.0, 'yaw': 0.0, 'width': 254, 'height': 254, 'fov': 90, 'id': 'middle'},
-                    {'type': 'sensor.camera.rgb', 'x': 1.2, 'y': 0.25, 'z': 1.3, 'roll': 0.0, 'pitch': 0.0, 'yaw': 45.0, 'width': 254, 'height': 254, 'fov': 90, 'id': 'right'},
+        sensors = [ {'type': 'sensor.camera.rgb', 'x': 1.2, 'y': -0.25, 'z': 1.3, 'roll': 0.0, 'pitch': 0.0, 'yaw': -45.0, 'width': 256, 'height': 128, 'fov': 90, 'id': 'left'},
+                    {'type': 'sensor.camera.rgb', 'x': 1.3, 'y': 0.0, 'z': 1.3, 'roll': 0.0, 'pitch': 0.0, 'yaw': 0.0, 'width': 256, 'height': 128, 'fov': 90, 'id': 'middle'},
+                    {'type': 'sensor.camera.rgb', 'x': 1.2, 'y': 0.25, 'z': 1.3, 'roll': 0.0, 'pitch': 0.0, 'yaw': 45.0, 'width': 256, 'height': 128, 'fov': 90, 'id': 'right'},
                     {'type': 'sensor.speedometer', 'id': 'Speed'}]
 
         return sensors
@@ -121,7 +122,7 @@ class AutoAgent(AutonomousAgent):
 
         waypoint = info_dict["CEnvAgent"].get_route()[new_idx][0]
 
-        acceleration = self.long_pid.run_step(5, info_dict["CEnvAgent"].get_speed())
+        acceleration = self.long_pid.run_step(self.target_speed, info_dict["CEnvAgent"].get_speed())
         current_steering = self.lat_pid.run_step(waypoint, info_dict["CEnvAgent"].get_actor().get_transform())
         control = carla.VehicleControl()
         if acceleration >= 0.0:

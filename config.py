@@ -1,3 +1,4 @@
+import carla
 EXPERIMENT_NAME = "prueba"
 
 ################################################
@@ -26,6 +27,21 @@ VAE_NAME = ""
 VAE_VERBOSE = 0
 
 INPUT_DIM = (IMAGE_HEIGHT, IMAGE_WIDTH, N_CHANNELS)
+
+################################################
+####          DATASET COLLECTION            ####
+################################################
+
+COLLECTION_STEPS_PER_RESET = 2000
+COLLECTION_RESETS_PER_MAP = 20
+COLLECTION_TARGET_SPEED = 10
+COLLECTION_INPUT_NOISE = True
+COLLECTION_MAPS = ["Town01", "Town02", "Town07"]
+COLLECTION_HIDDEN_OBJECTS = [carla.CityObjectLabel.Buildings, carla.CityObjectLabel.Fences, carla.CityObjectLabel.Other] 
+                            # Nunca usar, crashea carla.CityObjectLabel.Dynamic
+                            #Ultra lento carla.CityObjectLabel.Water carla.CityObjectLabel.Terrain
+                            #Lento carla.CityObjectLabel.GuardRail carla.CityObjectLabel.Vegetation carla.CityObjectLabel.Walls carla.CityObjectLabel.Static
+COLLECTION_WEATHER = "random"
 
 ################################################
 ####              RL TRAINING               ####

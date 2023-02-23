@@ -1,5 +1,7 @@
 
 .vscode/
+log/
+CarlaUE4.exe
 # Models
 *.h5
 

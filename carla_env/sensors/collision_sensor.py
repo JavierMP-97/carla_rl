@@ -33,14 +33,14 @@ class CollisionSensor(BaseReader):
     def __init__(self, vehicle, reading_frequency=1.0):
         """Constructor method"""
         self.history = []
-        self.collided_actors = {}
+        self.collided_actors = set()
         world = vehicle.get_world()
         blueprint = world.get_blueprint_library().find('sensor.other.collision')
         self.sensor = world.spawn_actor(blueprint, carla.Transform(), attach_to=vehicle)
         # We need to pass the lambda a weak reference to
         # self to avoid circular references
 
-        self.sensor.listen(lambda event: CollisionSensor._on_collision(event))
+        self.sensor.listen(lambda event: self._on_collision(event))
         super(CollisionSensor, self).__init__(vehicle, reading_frequency)
 
     def __call__(self):
@@ -50,9 +50,9 @@ class CollisionSensor(BaseReader):
         max_collision = 0
         for h in self.history:
             max_collision = max(max_collision, h[1])
+            
         return max_collision
 
-    @staticmethod
     def _on_collision(self, event):
         """On collision method"""
         self.collided_actors.add(event.other_actor)
@@ -61,6 +61,10 @@ class CollisionSensor(BaseReader):
         self.history.append((event.frame, intensity))
         if len(self.history) > 60:
             self.history.pop(0)
+    
+    def reset(self):
+        self.history = []
+        self.collided_actors = set()
 
     def stop(self):
         self._run_ps = False

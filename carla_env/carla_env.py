@@ -6,7 +6,7 @@ import sys
 import os
 import glob
 import time
-from typing import List, Tuple, Dict, Any, Callable, Optional
+from typing import List, Tuple, Dict, Any, Callable, Optional, Union
 
 import weakref
 import re
@@ -26,7 +26,7 @@ from srunner.scenariomanager.timer import GameTime
 from agents.navigation.local_planner import LocalPlanner, RoadOption
 from agents.navigation.global_route_planner import GlobalRoutePlanner
 #from agents.navigation.global_route_planner_dao import GlobalRoutePlannerDAO
-from config import REWARD_CRASH, CRASH_SPEED_WEIGHT, MAX_CTE_ERROR, LEADING_INSTRUCTIONS, NUM_EPISODES_FOR_MAP_CHANGE, MIN_SPEED, NUM_TICK_WITHOUT_MIN_SPEED
+from config import REWARD_CRASH, CRASH_SPEED_WEIGHT, MAX_CTE_ERROR, NUM_EPISODES_FOR_MAP_CHANGE, MIN_SPEED, NUM_TICK_WITHOUT_MIN_SPEED
 
 ROAD_OPTIONS = [RoadOption.LEFT, RoadOption.STRAIGHT, RoadOption.RIGHT] #, RoadOption.LANEFOLLOW, RoadOption.CHANGELANELEFT, RoadOption.CHANGELANERIGHT]
 ALL_ROAD_OPTIONS = [RoadOption.LEFT, RoadOption.STRAIGHT, RoadOption.RIGHT, RoadOption.CHANGELANELEFT, RoadOption.LANEFOLLOW, RoadOption.CHANGELANERIGHT]
@@ -37,7 +37,7 @@ CLOUD = ["CloudyNoon", "CloudySunset"]
 WET = ["WetNoon", "WetSunset"]
 CLOUDWET = ["WetCloudyNoon", "WetCloudySunset"]
 STORM = ["HardRainNoon", "HardRainSunset", "MidRainSunset", "MidRainyNoon", "SoftRainNoon", "SoftRainSunset"]
-MAPS = ["Town01", "Town03", "Town04"]
+MAPS = ["Town01", "Town02", "Town07"]
 THROTTLE = 1
 STEERING = 0
 
@@ -131,6 +131,8 @@ class CEnvAgent():
         self.success = 0
         self.next_instruction = -1
         self.next_instruction_distance = 0.0
+        if self.collision_sensor is not None:
+            self.collision_sensor.reset()
 
     def get_actor(self) -> carla.Vehicle:
         return self.actor
@@ -304,7 +306,7 @@ class CarlaEnv(gym.Env):
 
         try:
             self.client: carla.Client = carla.Client('localhost', 2000)
-            self.client.set_timeout(10.0)
+            self.client.set_timeout(100.0)
             self.world: carla.World = self.client.get_world()
         except Exception as e:
             print("Error connecting to Carla")
@@ -386,22 +388,29 @@ class CarlaEnv(gym.Env):
     # Change town
     # Change weather 
     # Respawn actors (different position)
-    def reset(self, change_map: bool = False) -> Tuple[List[Dict[str, Any]], List[Dict[str, Any]]]:
+    def reset(  self, change_map: bool = False, map_name: Optional[str] = None, change_weather: bool = True, weather: Optional[str] = "random", 
+                hide_objects: bool = False, hidden_objects_list: List[str] = []) -> Tuple[List[Dict[str, Any]], List[Dict[str, Any]]]:
         """
         This function resets the environment and starts a new episode
 
         :param bool change_map: A flag that indicates if the simulator should change its map
-        :return: A tuple with
+        :param str map: (Optional) The name of the map that carla will load
+        :param bool change_weather: A flag that indicates if the simulator should change its weather
+        :param str weather: A string with the name of the weather that carla will load. If "random", a random weather will be generated. If None, a weather will be chosen from 
+                            the list at the beginning of the script
+        :param bool hide_objects: A flag that indicates if the simulator should hide some objects
+        :param List[str] hidden_objects_list: A list with the type of objects that can be hidden
+        :return: A tuple with:
             - data_dict_list: One dictionary for each agent with the data from each sensor. The key to access the data of each sensor will be the id of that senor (except cameras)
             - info_list: One dictionary for each agent with any data that you could ever wish for 
         """
         if self.change_map_counter >= NUM_EPISODES_FOR_MAP_CHANGE  or self.first_episode or change_map:
+            settings = self.world.get_settings()
+            settings.synchronous_mode = False
+            settings.fixed_delta_seconds = None
+            self.world.apply_settings(settings)
             if self.first_episode:
                 self.first_episode = False
-                settings = self.world.get_settings()
-                settings.synchronous_mode = False
-                settings.fixed_delta_seconds = None
-                self.world.apply_settings(settings)
                 self.client.reload_world()
             else:
                 self._cleanup()
@@ -410,15 +419,13 @@ class CarlaEnv(gym.Env):
                 self.change_map_counter = 0
 
             self.spawn_index = 0
-            self._load_and_wait_for_world(MAPS[self.map_idx])
-            self.map_idx += 1
-            self.map_idx %= len(MAPS)
 
-            settings = self.world.get_settings()
-            if True: #self._args.sync:  
-                settings.synchronous_mode = True
-                settings.fixed_delta_seconds = 1.0 / self.frame_rate
-            self.world.apply_settings(settings)
+            if map_name == None:
+                map_name = MAPS[self.map_idx]
+                self.map_idx += 1
+                self.map_idx %= len(MAPS)
+            
+            self._load_and_wait_for_world(map_name)
 
             self._prepare_ego_vehicles(respawn=True)
 
@@ -434,7 +441,21 @@ class CarlaEnv(gym.Env):
             #self.lane_sensor.reset()
             #self.collision_sensor.reset()
 
-        self.next_weather()
+        if change_weather:
+            self.next_weather(next_weather = weather)
+
+        if hide_objects:
+            self.hide_objects(hidden_objects_list = hidden_objects_list)
+
+        self._tick()
+
+        settings = self.world.get_settings()
+        if True: #self._args.sync:  
+            settings.synchronous_mode = True
+            settings.fixed_delta_seconds = 1.0 / self.frame_rate
+        self.world.apply_settings(settings)
+
+        self._tick()
 
         spectator = self.world.get_spectator()
         transform = self.agent_list[0].get_actor().get_transform()
@@ -642,6 +663,7 @@ class CarlaEnv(gym.Env):
                     actor = self.world.try_spawn_actor(actor_bp, _spawn_point)
                     if actor is not None:
                         self.agent_list[vehicle_idx].set_actor(actor)
+                        self.agent_list[vehicle_idx].get_actor().set_light_state(carla.VehicleLightState.HighBeam)
                     else:
                         print("Error: Couldn't spawn actor")
             else:        
@@ -807,8 +829,8 @@ class CarlaEnv(gym.Env):
                             print(agent.get_route()[i][1])
                         else:
                             next_instruction = ROAD_OPTIONS.index(agent.get_route()[i][1])
-                        next_instruction_distance = agent.get_actor().get_location().distance(agent.get_route()[i][0].transform.location)
-                        break
+                            next_instruction_distance = agent.get_actor().get_location().distance(agent.get_route()[i][0].transform.location)
+                            break
                 if next_instruction == RoadOption.LANEFOLLOW:
                     destination_point = random.choice(self.world.get_map().get_spawn_points()) if self.world.get_map().get_spawn_points() else carla.Transform()
                     i = 0
@@ -957,16 +979,12 @@ class CarlaEnv(gym.Env):
             game_over_list.append(self.is_game_over_agent(agent))
         return game_over_list
 
-    def next_weather(self, next_weather: Optional[str] = None, reverse: bool = False) -> None:
+    def next_weather(self, next_weather: Optional[str] = "random", reverse: bool = False) -> None:
         """Get next weather setting"""
         '''
-        self._weather_index += -1 if reverse else 1
-        self._weather_index %= len(self._weather_presets)
-        preset = self._weather_presets[self._weather_index]
-        self.hud.notification('Weather: %s' % preset[1])
-        self.player.get_world().set_weather(preset[0])
+
         '''
-        
+        parameters = None
         if next_weather is None:
             weather = ""
             n = random.random()
@@ -982,10 +1000,51 @@ class CarlaEnv(gym.Env):
                 weather = random.choice(CLOUDWET)
             else:
                 weather = random.choice(STORM)
-        else:
+            parameters = getattr(carla.WeatherParameters, weather)
+        elif next_weather != "random":
             weather = next_weather
-                    
-        self.world.set_weather(getattr(carla.WeatherParameters, weather))
+            parameters = getattr(carla.WeatherParameters, weather)
+        else: 
+            parameters = carla.WeatherParameters()
+            parameters.sun_azimuth_angle = np.random.uniform(0,360)
+            parameters.sun_altitude_angle = np.random.uniform(-90,90)
+            parameters.wind_intensity = np.random.uniform(0,100)
+            parameters.mie_scattering_scale = max(0, np.random.normal(0.03, 0.01))
+            parameters.rayleigh_scattering_scale = max(0, np.random.normal(parameters.rayleigh_scattering_scale, parameters.rayleigh_scattering_scale * 0.3))
+            parameters.cloudiness = np.random.uniform(0,100)
+            parameters.precipitation_deposits = np.random.uniform(0,100)
+            #parameters.wetness 
+            n = random.random()
+            if n < 0.25:
+                """clear"""
+                pass
+            elif n < 0.5:
+                """rain"""
+                parameters.precipitation = np.random.uniform(0,100)
+            elif n < 0.75:
+                """fog"""
+                parameters.fog_density = np.random.uniform(0,100)
+                parameters.fog_distance = max(0, np.random.normal(300, 100))
+                parameters.fog_falloff = np.random.uniform(0,10)
+                parameters.scattering_intensity = max(np.random.normal(0.03, 0.01), 0)
+            else:
+                """sandstorm"""
+                parameters.precipitation_deposits = 0
+                parameters.dust_storm = np.random.uniform(0,100)
+
+        self.world.set_weather(parameters)
+
+    def hide_objects(self, hidden_objects_list: List[str] = [], base_hide_probability: float = 0.6):
+        """
+        Hides a random set of objects of the categories provided
+        """
+        
+        hide_probability = max(0.25, min(1, np.random.normal(base_hide_probability, 0.2)))
+
+        for object_type in hidden_objects_list:
+            object_list = self.world.get_environment_objects(object_type)
+            for obj in object_list:
+                self.world.enable_environment_objects([obj.id], random.random() < hide_probability)
 
     def create_route(self, origin: carla.Location, destination: carla.Location) -> List[Tuple[carla.Waypoint, RoadOption]]:
         """
