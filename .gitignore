@@ -1,6 +1,9 @@
 
 .vscode/
 log/
+*log/
+*logs/
+*weights/
 CarlaUE4.exe
 # Models
 *.h5

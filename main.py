@@ -32,4 +32,4 @@ env = CarlaEnv( [s[0] for s in agent_list],
 #training.run(save_data = False, render = True, render_mode = "rgb", input_noise = True)
 #training.run(save_data = True, render_mode = "all", input_noise = True)
 data_collection = DataCollection(env, agent_list)
-data_collection.run(render=False, render_mode="rgb", input_noise=True)
+data_collection.run(render=False, render_mode="rgb", input_noise=True, change_map_by_steps=True)

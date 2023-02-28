@@ -88,9 +88,9 @@ class AutoAgent(AutonomousAgent):
         self.track = Track.SENSORS
         
     def sensors(self):  # pylint: disable=no-self-use
-        sensors = [ {'type': 'sensor.camera.rgb', 'x': 1.2, 'y': -0.25, 'z': 1.3, 'roll': 0.0, 'pitch': 0.0, 'yaw': -45.0, 'width': 256, 'height': 128, 'fov': 90, 'id': 'left'},
+        sensors = [ {'type': 'sensor.camera.rgb', 'x': 1.2, 'y': -0.25, 'z': 1.3, 'roll': 0.0, 'pitch': -5.0, 'yaw': -75.0, 'width': 256, 'height': 128, 'fov': 90, 'id': 'left'},
                     {'type': 'sensor.camera.rgb', 'x': 1.3, 'y': 0.0, 'z': 1.3, 'roll': 0.0, 'pitch': 0.0, 'yaw': 0.0, 'width': 256, 'height': 128, 'fov': 90, 'id': 'middle'},
-                    {'type': 'sensor.camera.rgb', 'x': 1.2, 'y': 0.25, 'z': 1.3, 'roll': 0.0, 'pitch': 0.0, 'yaw': 45.0, 'width': 256, 'height': 128, 'fov': 90, 'id': 'right'},
+                    {'type': 'sensor.camera.rgb', 'x': 1.2, 'y': 0.25, 'z': 1.3, 'roll': 0.0, 'pitch': -5.0, 'yaw': 75.0, 'width': 256, 'height': 128, 'fov': 90, 'id': 'right'},
                     {'type': 'sensor.speedometer', 'id': 'Speed'}]
 
         return sensors
