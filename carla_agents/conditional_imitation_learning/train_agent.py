@@ -16,6 +16,7 @@ def load_img(img_path):
 def decode_img(encoded_img):
     image = tf.io.decode_png(encoded_img)
     image = tf.cast(image, tf.float32)
+    image = tf.keras.applications.vgg16.preprocess_input(image)
     return image
 @tf.function
 def decode_info(info_path):
@@ -23,6 +24,7 @@ def decode_info(info_path):
     txt = tf.io.decode_csv(txt, [float(), int()], select_cols = [3, 6])
     label = txt[0]
     command = tf.one_hot(txt[1], 3)
+    command = tf.reshape(command, [1,1,3])
     return label, command
 
 
@@ -130,20 +132,44 @@ def create_model(side_images = False, weights_path = None):
     else:
         input_shape = (128,256,3)
 
-    base_model = tf.keras.applications.MobileNetV3Large(input_shape=input_shape, weights = "imagenet", include_top=False)
+    #base_model = tf.keras.applications.MobileNetV3Large(input_shape=input_shape, weights = "imagenet", include_top=False)
+    #base_model = tf.keras.applications.vgg16.VGG16(input_shape=input_shape, weights = "imagenet", include_top=False)
     inputs = tf.keras.Input(shape=input_shape, name = "image")
-    input2 = tf.keras.Input(shape=(3), name = "command")
-    x = base_model(inputs, training=False)
+    input2 = tf.keras.Input(shape=(1,1,3), name = "command")
+    #x = base_model(inputs, training=False)
     #x = tf.keras.layers.GlobalAveragePooling2D()(x) #BS = 64
-    x = tf.keras.layers.Flatten()(x) #BS = 32
-    x = tf.keras.layers.Concatenate()([x, input2])
-    x = tf.keras.layers.Dense(1000, activation = "gelu", kernel_initializer = tf.keras.initializers.HeNormal())(x)
+    #x = tf.keras.layers.Flatten()(x) #BS = 32
+    #x = tf.keras.layers.Concatenate()([x, input2])
+    #x = tf.keras.layers.Dense(1000, activation = "gelu", kernel_initializer = tf.keras.initializers.HeNormal())(x)
     #x = tf.keras.layers.Dense(1000, activation = "gelu", kernel_initializer = tf.keras.initializers.HeNormal())(x)
     #x = tf.keras.layers.Dropout(0.1)(x)
-    outputs = tf.keras.layers.Dense(1)(x)
-    model = tf.keras.Model({"image":inputs, "command": input2}, outputs)
-    #model = tf.keras.Model((inputs, input2), outputs)
+    base_model = tf.keras.applications.MobileNetV3Large(input_shape=input_shape, weights = "imagenet", include_top=True) #
+    #base_model.trainable = False
+    #print(base_model.summary())
+    #base_model = tf.keras.Model({"image":base_model.input}, base_model.get_layer(index = -2).output)
+    main_model = tf.keras.Model(base_model.input, base_model.get_layer("global_average_pooling2d").output)
+    last_stage_model = tf.keras.Model(base_model.get_layer("Conv_2").input, base_model.get_layer("dropout").output)
+
+    print(base_model.summary())
+    
+    #x = base_model(inputs, training=False)
+    x = main_model(inputs, training=False)
+    x = last_stage_model(x, training=False)
+    
+    x = tf.keras.layers.Concatenate()([x, input2])
+    x = tf.keras.layers.Conv2D(1000,1, activation = "gelu", kernel_initializer = tf.keras.initializers.HeNormal())(x)
+    conv = tf.keras.layers.Conv2D(1,1)(x)
+    output = tf.keras.layers.Flatten()(conv)
+
+    #x = tf.keras.layers.Flatten()(x)
+    #x = tf.keras.layers.Dense(1000, activation = "gelu", kernel_initializer = tf.keras.initializers.HeNormal())(x)
+    #output = tf.keras.layers.Dense(1)(x)
+
+    model = tf.keras.Model({"image":inputs, "command": input2}, output)
+    #last_stage_model.trainable = True
     print(model.summary())
+    #model = tf.keras.Model((inputs, input2), outputs)
+    
 
     if weights_path != None:
         model.load_weights(weights_path)
@@ -162,15 +188,16 @@ def warmup_network(target_lr = 1e-4, num_epochs = 3, base_lr = 1e-6):
 
 SIDE_IMAGES = True
 
-EXPERIMENT_NAME = "flatten"
-current_path = os.path.realpath(os.path.dirname(__file__))
-if os.path.isdir(current_path + "/logs/" + EXPERIMENT_NAME):
-    print("Change the name of the experiment")
-    quit()
-else:
-    os.mkdir(current_path + "/logs/" + EXPERIMENT_NAME)
+EXPERIMENT_NAME = "MN3-extra1000conv-noweights"
+if (EXPERIMENT_NAME != None and EXPERIMENT_NAME != ""):
+    current_path = os.path.realpath(os.path.dirname(__file__))
+    if os.path.isdir(current_path + "/logs/" + EXPERIMENT_NAME):
+        print("Change the name of the experiment")
+        quit()
+    else:
+        os.mkdir(current_path + "/logs/" + EXPERIMENT_NAME)
 
-dataset_list = create_tf_dataset(n_instances = 30000, side_images = SIDE_IMAGES, batch_size = 32, preload_images = True)
+dataset_list = create_tf_dataset(n_instances = 30000, side_images = SIDE_IMAGES, batch_size = 64, preload_images = True)
 
 model, base_model = create_model(side_images = SIDE_IMAGES)
 
@@ -179,14 +206,13 @@ lr = 1e-4
 fine_tune_lr = 1e-5
 warmup_epochs = 3
 epochs = 10
-fine_tune_epochs = 5
-
-
+fine_tune_epochs = 10
 
 cb = []
 #cb.append(tf.keras.callbacks.ModelCheckpoint("model_weights4.hdf5", monitor = 'val_loss', save_best_only = True, save_weights_only = True))
 cb.append(tf.keras.callbacks.ReduceLROnPlateau(factor=0.2, patience=5))
-cb.append(tf.keras.callbacks.TensorBoard(log_dir = current_path + "/logs/" + EXPERIMENT_NAME))
+if (EXPERIMENT_NAME != None and EXPERIMENT_NAME != ""):
+    cb.append(tf.keras.callbacks.TensorBoard(log_dir = current_path + "/logs/" + EXPERIMENT_NAME))
 cb.append(tf.keras.callbacks.LearningRateScheduler(warmup_network(target_lr = 1e-4, num_epochs = warmup_epochs, base_lr=warmup_lr)))
 
 model.compile(optimizer=tf.keras.optimizers.Adam(lr),
@@ -198,10 +224,11 @@ model.fit(dataset_list[0], epochs=warmup_epochs + epochs, validation_data = data
 #model.load_weights("model_weights.hdf5")
 
 base_model.trainable = True
-
+cb = cb[:-1]
 #cb.append(tf.keras.callbacks.ModelCheckpoint("model_weights5.hdf5", monitor = 'val_loss', save_best_only = True, save_weights_only = True))
 
-model.compile(optimizer=tf.keras.optimizers.Adam(fine_tune_lr),
+#model.compile(optimizer=tf.keras.optimizers.Adam(fine_tune_lr),
+model.compile(optimizer=tf.keras.optimizers.Adam(lr),
               loss=tf.keras.losses.MeanSquaredError(),
               metrics=[tf.keras.metrics.MeanSquaredError(),tf.keras.metrics.MeanAbsoluteError()])
 

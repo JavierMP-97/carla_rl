@@ -85,7 +85,7 @@ class CEnvAgent():
         self.data_dict: Dict[str, Tuple[int, Any]] = None
         self.info: Dict[str, Any] = None
         self.current_idx: int = 0
-        agent_path = os.path.realpath(os.path.dirname(__file__)) + "\\..\\log\\" + self.name
+        agent_path = os.path.realpath(os.path.dirname(__file__)) + "/../log/" + self.name
         if not os.path.isdir(agent_path):
             os.mkdir(agent_path)
             self.current_idx = 0
@@ -550,7 +550,7 @@ class CarlaEnv(gym.Env):
         :param bool save_info: A flag that indicates if the info dict of each agent must be saved
         """
         for idx, agent in enumerate(self.agent_list):
-            agent_path = os.path.realpath(os.path.dirname(__file__)) + "\\..\\log\\" + agent.get_name()
+            agent_path = os.path.realpath(os.path.dirname(__file__)) + "/../log/" + agent.get_name()
             state = agent.get_data_dict()
             info = agent.get_info()
 
@@ -562,7 +562,7 @@ class CarlaEnv(gym.Env):
                     if sensor["type"].startswith("sensor.camera."):
                         for camera_type in self.camera_types:
                             data = state[sensor["id"] + "_" + camera_type][1][:,:,0:3]
-                            cv2.imwrite(agent_path + "\\" + sensor["id"] + "_" + camera_type + "_" + str(agent.get_current_idx()).zfill(7) + ".png", data)
+                            cv2.imwrite(agent_path + "/" + sensor["id"] + "_" + camera_type + "_" + str(agent.get_current_idx()).zfill(7) + ".png", data)
                     elif sensor["type"] == 'sensor.speedometer':
                         if state_string != "":
                             state_string += ","
@@ -579,7 +579,7 @@ class CarlaEnv(gym.Env):
                     if file_name != "":
                         file_name += "_"
                     file_name += sensor_name
-                file = open(agent_path + "\\" + file_name + "_" + str(agent.get_current_idx()).zfill(7) + ".txt", "w")
+                file = open(agent_path + "/" + file_name + "_" + str(agent.get_current_idx()).zfill(7) + ".txt", "w")
                 file.write(state_string)
                 file.close()
             if save_info:
@@ -592,7 +592,7 @@ class CarlaEnv(gym.Env):
                         info_string += str(info[key])
                         file_name += sensor_name
 
-                file = open(agent_path + "\\" + "info_" + str(agent.get_current_idx()).zfill(7) + ".txt", "w")
+                file = open(agent_path + "/" + "info_" + str(agent.get_current_idx()).zfill(7) + ".txt", "w")
                 file.write(info_string)
                 file.close()
 
@@ -787,31 +787,52 @@ class CarlaEnv(gym.Env):
             location = transform.location
             rotation = transform.rotation.yaw
 
-            distance = 9999999
-            close_w = None
+            best_distance = 9999999
+            second_distance = 9999999
+            close_idx = -1
+            second_idx = -1
+            last_location = None
+            for idx, (w, _) in enumerate(agent.get_route()):
+                if last_location != w.transform.location:
+                    last_location = w.transform.location
+                    d = w.transform.location.distance(location)
+                    if d < best_distance:
+                        second_idx = close_idx
+                        close_idx = idx
+                        second_distance = best_distance
+                        best_distance = d
+                    elif d < second_distance:
+                        second_idx = idx
+                        second_distance = d
+        
+            prev_idx = min(close_idx, second_idx)
+            next_idx = max(close_idx, second_idx)
+            prev_dist = agent.get_route()[prev_idx][0].transform.location.distance(location)
+            next_dist = agent.get_route()[next_idx][0].transform.location.distance(location)
+            w2w_dist =  agent.get_route()[prev_idx][0].transform.location.distance(agent.get_route()[next_idx][0].transform.location)
 
-            for idx, (w, ins) in enumerate(agent.get_route()):
-                d = w.transform.location.distance(location)
+            prev_waypoint = agent.get_route()[prev_idx][0]
+            next_waypoint = agent.get_route()[next_idx][0]
 
-                if d < distance:
-                    close_w = w
-                    close_idx = idx
-                distance = min(distance, d)
+            #w_rotation = prev_waypoint.transform.rotation.yaw
+            w2w_relative_position = (next_waypoint.transform.location.x - prev_waypoint.transform.location.x, next_waypoint.transform.location.y - prev_waypoint.transform.location.y)
+            p_rotation = math.atan2(w2w_relative_position[1], w2w_relative_position[0])
+            w_location = prev_waypoint.transform.location
 
-            w_rotation = close_w.transform.rotation.yaw
-            w_location = close_w.transform.location
-
-            angle_diff = rotation - w_rotation
+            #angle_diff = rotation - w_rotation
+            angle_diff = rotation - math.degrees(p_rotation)
 
             relative_position = (location.x - w_location.x, location.y - w_location.y)
-            distance = math.sqrt(relative_position[0]**2 + relative_position[1]**2)
-
+            #distance = math.sqrt(relative_position[0]**2 + relative_position[1]**2)
             relative_angle_rad = math.atan2(relative_position[1], relative_position[0])
-
-            relative_angle_diff_rad = relative_angle_rad - math.radians(w_rotation)
-
-            cte = math.sin(relative_angle_diff_rad) * distance  
-
+            #relative_angle_diff_rad = relative_angle_rad - math.radians(w_rotation)
+            relative_angle_diff_rad = relative_angle_rad - p_rotation
+            #cte = math.sin(relative_angle_diff_rad) * distance  
+            
+            
+            new_cte = ((prev_dist**2) - (((prev_dist**2 - next_dist**2 + w2w_dist**2)**2) / (4 * (w2w_dist**2)))) ** (1/2)
+            if relative_angle_diff_rad < 0:
+                new_cte*= -1
             while angle_diff > 180:
                 angle_diff -= 360
             while angle_diff < -180:
@@ -823,7 +844,7 @@ class CarlaEnv(gym.Env):
             next_instruction = RoadOption.LANEFOLLOW
             next_instruction_distance = 0.0
             while next_instruction == RoadOption.LANEFOLLOW:
-                for i in range(close_idx, len(agent.get_route())):
+                for i in range(next_idx, len(agent.get_route())):
                     if agent.get_route()[i][1] != RoadOption.LANEFOLLOW:
                         if agent.get_route()[i][1] == RoadOption.CHANGELANELEFT or agent.get_route()[i][1] == RoadOption.CHANGELANERIGHT:
                             print(agent.get_route()[i][1])
@@ -831,7 +852,7 @@ class CarlaEnv(gym.Env):
                             next_instruction = ROAD_OPTIONS.index(agent.get_route()[i][1])
                             next_instruction_distance = agent.get_actor().get_location().distance(agent.get_route()[i][0].transform.location)
                             break
-                if next_instruction == RoadOption.LANEFOLLOW:
+                if next_instruction == RoadOption.LANEFOLLOW or len(agent.get_route()) < 10:
                     destination_point = random.choice(self.world.get_map().get_spawn_points()) if self.world.get_map().get_spawn_points() else carla.Transform()
                     i = 0
                     while agent.get_route()[-1][0] == destination_point:
@@ -841,24 +862,20 @@ class CarlaEnv(gym.Env):
                         destination_point = random.choice(self.world.get_map().get_spawn_points()) if self.world.get_map().get_spawn_points() else carla.Transform()
                     route = self.create_route(agent.get_route()[-1][0].transform.location, destination_point.location)
                     agent.set_route(agent.get_route() + route[1:])
-                    print("bien")
 
             junction_distance = 0.0
-            for i in range(close_idx, len(agent.get_route())):
+            for i in range(next_idx, len(agent.get_route())):
                 if agent.get_route()[i][0].is_junction:
                     junction_distance = agent.get_actor().get_location().distance(agent.get_route()[i][0].transform.location)
                     break
             
-            prev_idx = 0
-            if close_idx > 0:
-                prev_idx = close_idx - 1
             agent.set_route(agent.get_route()[prev_idx:])
 
             success = 0
             #if close_idx == len(agent.get_route()) - 1:
             #    success = 1
 
-            agent.set_cte(cte)
+            agent.set_cte(new_cte)
             
             agent.set_angle_diff(angle_diff)
             
@@ -870,8 +887,6 @@ class CarlaEnv(gym.Env):
             
             agent.set_success(success)
             
-            
-
             '''
             print("\n")
             print("Trans: ", transform)
@@ -921,25 +936,6 @@ class CarlaEnv(gym.Env):
 
         #print("Reward: ", BASE_REWARD + THROTTLE_REWARD_WEIGHT * self.last_throttle)
         if abs(agent.get_cte()) > MAX_CTE_ERROR:
-            
-            transform = agent.get_actor().get_transform()
-
-            location = transform.location
-
-            cte = 9999999
-            close_w = None
-
-            for w, _ in agent.get_route():
-                d = w.transform.location.distance(location)
-
-                if d < cte:
-                    close_w = w
-                cte = min(cte, d)
-
-            #print("CAR: ", transform)
-            #print("WP: ", close_w.transform)
-            #print("Instruction: ", agent.get_close_ins())
-
             return REWARD_CRASH - agent.get_speed() * CRASH_SPEED_WEIGHT
 
 

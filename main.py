@@ -11,7 +11,7 @@ from config import MAX_CTE_ERROR, MAX_STEERING_DIFF, COLLECTION_TARGET_SPEED, CO
 def noisy_control(steer, throttle, info_dict):
     sd = (1 - (abs(info_dict["cte"]) / MAX_CTE_ERROR)) * (1 - abs(info_dict["angle_diff"]))
     sd = max(sd, 0)
-    new_steer = max(min(np.random.normal(steer, sd * .5), 1), -1)
+    new_steer = max(min(np.random.normal(steer, sd * .3), 1), -1)
 
     return new_steer, throttle
 

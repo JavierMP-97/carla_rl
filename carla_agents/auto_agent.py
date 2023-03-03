@@ -76,7 +76,7 @@ class AutoAgent(AutonomousAgent):
         self.past_steering = 0
         self.max_brake = 0.3
         self.max_throt = 0.75
-        self.max_steer = 0.8
+        self.max_steer = 1 #0.8
         self.target_speed = target_speed
 
     def setup(self, path_to_conf_file):
