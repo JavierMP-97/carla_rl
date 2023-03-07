@@ -37,7 +37,7 @@ COLLECTION_STEPS_PER_MAP = 200000
 COLLECTION_RESETS_PER_MAP = 20
 COLLECTION_TARGET_SPEED = 10
 COLLECTION_INPUT_NOISE = True
-COLLECTION_MAPS = ["Town01", "Town02"]#, "Town07"]
+COLLECTION_MAPS = [ "Town02"]#, "Town07"] "Town01",
 COLLECTION_HIDDEN_OBJECTS = [carla.CityObjectLabel.Buildings, carla.CityObjectLabel.Fences, carla.CityObjectLabel.Other] 
                             # Nunca usar, crashea carla.CityObjectLabel.Dynamic
                             #Ultra lento carla.CityObjectLabel.Water carla.CityObjectLabel.Terrain

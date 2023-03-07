@@ -16,7 +16,7 @@ def load_img(img_path):
 def decode_img(encoded_img):
     image = tf.io.decode_png(encoded_img)
     image = tf.cast(image, tf.float32)
-    image = tf.keras.applications.vgg16.preprocess_input(image)
+    #image = tf.keras.applications.vgg16.preprocess_input(image)
     return image
 @tf.function
 def decode_info(info_path):
@@ -108,10 +108,11 @@ def create_tf_dataset(n_instances = 400000, instances_per_map = 200000, n_maps =
             input_tuple = (path_dict["info"], path_dict["middle"])
 
         with tf.device('CPU'):
-            loaded_dataset = tf.data.Dataset.from_tensor_slices(input_tuple).map(load_data(side_images = side_images), num_parallel_calls=tf.data.AUTOTUNE, deterministic=False)
+            loaded_dataset = None #tf.data.Dataset.from_tensor_slices(input_tuple).map(load_data(side_images = side_images), num_parallel_calls=tf.data.AUTOTUNE, deterministic=False)
+            decoded_dataset = None
             if preload_images:
                 loaded_dataset = tf.data.Dataset.from_tensor_slices(input_tuple).map(load_data(side_images = side_images), num_parallel_calls=tf.data.AUTOTUNE, deterministic=False)
-                decoded_dataset = loaded_dataset.map(decode_data(side_images = side_images), num_parallel_calls=12, deterministic=False)
+                decoded_dataset = loaded_dataset.map(decode_data(side_images = side_images), num_parallel_calls=tf.data.AUTOTUNE, deterministic=False)
                 decoded_dataset = decoded_dataset.cache()
                 if dataset_idx == 0:
                     decoded_dataset = decoded_dataset.shuffle(int(train_split_per_map * n_maps), reshuffle_each_iteration=True)
@@ -119,7 +120,7 @@ def create_tf_dataset(n_instances = 400000, instances_per_map = 200000, n_maps =
                 loaded_dataset = tf.data.Dataset.from_tensor_slices(input_tuple).map(load_data(side_images = side_images), num_parallel_calls=tf.data.AUTOTUNE, deterministic=False).cache()
                 if dataset_idx == 0:
                     loaded_dataset = loaded_dataset.shuffle(int(train_split_per_map * n_maps), reshuffle_each_iteration=True)
-                decoded_dataset = loaded_dataset.map(decode_data(side_images = side_images), num_parallel_calls=12, deterministic=False)
+                decoded_dataset = loaded_dataset.map(decode_data(side_images = side_images), num_parallel_calls=tf.data.AUTOTUNE, deterministic=False)
             decoded_dataset = decoded_dataset.batch(batch_size, drop_remainder=True).prefetch(tf.data.AUTOTUNE)
         dataset_list.append(decoded_dataset)
 
@@ -133,24 +134,28 @@ def create_model(side_images = False, weights_path = None):
         input_shape = (128,256,3)
 
     #base_model = tf.keras.applications.MobileNetV3Large(input_shape=input_shape, weights = "imagenet", include_top=False)
-    #base_model = tf.keras.applications.vgg16.VGG16(input_shape=input_shape, weights = "imagenet", include_top=False)
+    
     inputs = tf.keras.Input(shape=input_shape, name = "image")
-    input2 = tf.keras.Input(shape=(1,1,3), name = "command")
-    #x = base_model(inputs, training=False)
+    input2 = tf.keras.Input(shape=(3), name = "command")
+    base_model = tf.keras.applications.vgg16.VGG16(input_shape=input_shape, weights = "imagenet", include_top=False)
+    x = base_model(inputs, training=False)
     #x = tf.keras.layers.GlobalAveragePooling2D()(x) #BS = 64
-    #x = tf.keras.layers.Flatten()(x) #BS = 32
-    #x = tf.keras.layers.Concatenate()([x, input2])
+    x = tf.keras.layers.Flatten()(x) #BS = 32
+    x = tf.keras.layers.Concatenate()([x, input2])
     #x = tf.keras.layers.Dense(1000, activation = "gelu", kernel_initializer = tf.keras.initializers.HeNormal())(x)
-    #x = tf.keras.layers.Dense(1000, activation = "gelu", kernel_initializer = tf.keras.initializers.HeNormal())(x)
+    x = tf.keras.layers.Dense(1000, activation = "gelu", kernel_initializer = tf.keras.initializers.HeNormal())(x)
     #x = tf.keras.layers.Dropout(0.1)(x)
-    base_model = tf.keras.applications.MobileNetV3Large(input_shape=input_shape, weights = "imagenet", include_top=True) #
+    output = tf.keras.layers.Dense(1)(x)
+    
     #base_model.trainable = False
     #print(base_model.summary())
     #base_model = tf.keras.Model({"image":base_model.input}, base_model.get_layer(index = -2).output)
+    '''
+    inputs = tf.keras.Input(shape=input_shape, name = "image")
+    input2 = tf.keras.Input(shape=(1,1,3), name = "command")
+    base_model = tf.keras.applications.MobileNetV3Large(input_shape=input_shape, weights = "imagenet", include_top=True)
     main_model = tf.keras.Model(base_model.input, base_model.get_layer("global_average_pooling2d").output)
     last_stage_model = tf.keras.Model(base_model.get_layer("Conv_2").input, base_model.get_layer("dropout").output)
-
-    print(base_model.summary())
     
     #x = base_model(inputs, training=False)
     x = main_model(inputs, training=False)
@@ -160,13 +165,15 @@ def create_model(side_images = False, weights_path = None):
     x = tf.keras.layers.Conv2D(1000,1, activation = "gelu", kernel_initializer = tf.keras.initializers.HeNormal())(x)
     conv = tf.keras.layers.Conv2D(1,1)(x)
     output = tf.keras.layers.Flatten()(conv)
+    '''
 
     #x = tf.keras.layers.Flatten()(x)
     #x = tf.keras.layers.Dense(1000, activation = "gelu", kernel_initializer = tf.keras.initializers.HeNormal())(x)
-    #output = tf.keras.layers.Dense(1)(x)
+    
 
     model = tf.keras.Model({"image":inputs, "command": input2}, output)
     #last_stage_model.trainable = True
+    print(base_model.summary())
     print(model.summary())
     #model = tf.keras.Model((inputs, input2), outputs)
     
@@ -188,7 +195,7 @@ def warmup_network(target_lr = 1e-4, num_epochs = 3, base_lr = 1e-6):
 
 SIDE_IMAGES = True
 
-EXPERIMENT_NAME = "MN3-extra1000conv-noweights"
+EXPERIMENT_NAME = None #"MN3-extra1000conv-noweights"
 if (EXPERIMENT_NAME != None and EXPERIMENT_NAME != ""):
     current_path = os.path.realpath(os.path.dirname(__file__))
     if os.path.isdir(current_path + "/logs/" + EXPERIMENT_NAME):
@@ -205,17 +212,19 @@ warmup_lr = 1e-6
 lr = 1e-4
 fine_tune_lr = 1e-5
 warmup_epochs = 3
-epochs = 10
-fine_tune_epochs = 10
+epochs = 20
+fine_tune_epochs = 0
 
 cb = []
 #cb.append(tf.keras.callbacks.ModelCheckpoint("model_weights4.hdf5", monitor = 'val_loss', save_best_only = True, save_weights_only = True))
-cb.append(tf.keras.callbacks.ReduceLROnPlateau(factor=0.2, patience=5))
+#cb.append(tf.keras.callbacks.ReduceLROnPlateau(factor=0.2, patience=5))
 if (EXPERIMENT_NAME != None and EXPERIMENT_NAME != ""):
     cb.append(tf.keras.callbacks.TensorBoard(log_dir = current_path + "/logs/" + EXPERIMENT_NAME))
 cb.append(tf.keras.callbacks.LearningRateScheduler(warmup_network(target_lr = 1e-4, num_epochs = warmup_epochs, base_lr=warmup_lr)))
 
-model.compile(optimizer=tf.keras.optimizers.Adam(lr),
+# optimizer=tf.keras.optimizers.experimental.RMSprop(learning_rate = lr, momentum = 0.9, use_ema=True)
+# optimizer=tf.keras.optimizers.Adam(lr)
+model.compile(optimizer=tf.keras.optimizers.experimental.RMSprop(learning_rate = lr, momentum = 0.9, use_ema=True),
               loss=tf.keras.losses.MeanSquaredError(),
               metrics=[tf.keras.metrics.MeanSquaredError(),tf.keras.metrics.MeanAbsoluteError()])
 

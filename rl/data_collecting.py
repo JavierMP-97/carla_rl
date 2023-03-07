@@ -72,7 +72,8 @@ class DataCollection():
                 (not change_map_by_steps and episodes < len(COLLECTION_MAPS) * COLLECTION_RESETS_PER_MAP) or 
                 (change_map_by_steps and total_steps < len(COLLECTION_MAPS) * COLLECTION_STEPS_PER_MAP)
                 ):
-
+            if total_steps % 10000 == 0:
+                print(total_steps)
             map_name = "Town01"
             if change_map_by_steps:
                 map_name = COLLECTION_MAPS[int(total_steps / COLLECTION_STEPS_PER_MAP)]
@@ -98,6 +99,8 @@ class DataCollection():
             total_steps += 1
 
             while not self.game_over_list[0] and not key_pressed["e"] and not key_pressed["w"] and steps < COLLECTION_STEPS_PER_RESET:
+                if total_steps % 10000 == 0:
+                    print(total_steps)
                 if change_map_by_steps and total_steps % COLLECTION_STEPS_PER_MAP == 0:
                     break
 
@@ -119,4 +122,5 @@ class DataCollection():
             self.game_over_list[0] = False
             episodes += 1
             steps = 0
+        input("Press Enter to continue...")
         self.env.close()

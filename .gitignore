@@ -4,6 +4,7 @@ log/
 *log/
 *logs/
 *weights/
+*nvvm
 CarlaUE4.exe
 # Models
 *.h5

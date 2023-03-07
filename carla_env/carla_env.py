@@ -30,6 +30,7 @@ from config import REWARD_CRASH, CRASH_SPEED_WEIGHT, MAX_CTE_ERROR, NUM_EPISODES
 
 ROAD_OPTIONS = [RoadOption.LEFT, RoadOption.STRAIGHT, RoadOption.RIGHT] #, RoadOption.LANEFOLLOW, RoadOption.CHANGELANELEFT, RoadOption.CHANGELANERIGHT]
 ALL_ROAD_OPTIONS = [RoadOption.LEFT, RoadOption.STRAIGHT, RoadOption.RIGHT, RoadOption.CHANGELANELEFT, RoadOption.LANEFOLLOW, RoadOption.CHANGELANERIGHT]
+MIN_ROUTE_LEN = 25
 
 DEFAULT = ["Default"]
 CLEAR = ["ClearNoon", "ClearSunset"]
@@ -678,15 +679,18 @@ class CarlaEnv(gym.Env):
             
             #UN TICK AQUI????
             #self._tick()
-
-            destination_point = random.choice(self.world.get_map().get_spawn_points()) if self.world.get_map().get_spawn_points() else carla.Transform()
-            i = 0
-            while spawn_point == destination_point:
-                i += 1
-                if i == 50000:
-                    print("Error: Stuck trying to decide spawn point")
+            route = []
+            while len(route) < MIN_ROUTE_LEN:
                 destination_point = random.choice(self.world.get_map().get_spawn_points()) if self.world.get_map().get_spawn_points() else carla.Transform()
-            route = self.create_route(spawn_point.location, destination_point.location)
+                i = 0
+                while spawn_point == destination_point:
+                    i += 1
+                    if i == 50000:
+                        print("Error: Stuck trying to decide spawn point")
+                    destination_point = random.choice(self.world.get_map().get_spawn_points()) if self.world.get_map().get_spawn_points() else carla.Transform()
+            
+            
+                route = self.create_route(spawn_point.location, destination_point.location)
 
             idx = 0
             while (route[idx][1] == RoadOption.CHANGELANELEFT or route[idx][1] == RoadOption.CHANGELANERIGHT) and (idx < len(route)):
@@ -789,27 +793,34 @@ class CarlaEnv(gym.Env):
 
             best_distance = 9999999
             second_distance = 9999999
-            close_idx = -1
-            second_idx = -1
-            last_location = None
+            close_idx = 0
+            second_idx = 0
+            best_wp = None
             for idx, (w, _) in enumerate(agent.get_route()):
-                if last_location != w.transform.location:
-                    last_location = w.transform.location
-                    d = w.transform.location.distance(location)
-                    if d < best_distance:
-                        second_idx = close_idx
-                        close_idx = idx
-                        second_distance = best_distance
-                        best_distance = d
-                    elif d < second_distance:
-                        second_idx = idx
-                        second_distance = d
+                if best_wp != None and best_wp.transform.location.distance(w.transform.location) == 0.0:
+                    continue
+                d = w.transform.location.distance(location)
+                if d < best_distance:
+                    best_wp = w
+                    second_idx = close_idx
+                    close_idx = idx
+                    second_distance = best_distance
+                    best_distance = d
+                elif d < second_distance:
+                    second_idx = idx
+                    second_distance = d
         
             prev_idx = min(close_idx, second_idx)
             next_idx = max(close_idx, second_idx)
             prev_dist = agent.get_route()[prev_idx][0].transform.location.distance(location)
             next_dist = agent.get_route()[next_idx][0].transform.location.distance(location)
             w2w_dist =  agent.get_route()[prev_idx][0].transform.location.distance(agent.get_route()[next_idx][0].transform.location)
+
+            if prev_idx == next_idx:
+                print("como")
+
+            if w2w_dist == 0:
+                print("???")
 
             prev_waypoint = agent.get_route()[prev_idx][0]
             next_waypoint = agent.get_route()[next_idx][0]
@@ -841,6 +852,8 @@ class CarlaEnv(gym.Env):
 
             angle_diff /= 180
 
+            
+
             next_instruction = RoadOption.LANEFOLLOW
             next_instruction_distance = 0.0
             while next_instruction == RoadOption.LANEFOLLOW:
@@ -852,15 +865,24 @@ class CarlaEnv(gym.Env):
                             next_instruction = ROAD_OPTIONS.index(agent.get_route()[i][1])
                             next_instruction_distance = agent.get_actor().get_location().distance(agent.get_route()[i][0].transform.location)
                             break
-                if next_instruction == RoadOption.LANEFOLLOW or len(agent.get_route()) < 10:
-                    destination_point = random.choice(self.world.get_map().get_spawn_points()) if self.world.get_map().get_spawn_points() else carla.Transform()
-                    i = 0
-                    while agent.get_route()[-1][0] == destination_point:
-                        i += 1
-                        if i == 50000:
-                            print("Error: Stuck trying to decide spawn point")
+                if next_instruction == RoadOption.LANEFOLLOW or agent.get_route()[-1] in ROAD_OPTIONS or len(agent.get_route()) < MIN_ROUTE_LEN:
+                    if next_instruction == RoadOption.LANEFOLLOW:
+                        print("1")
+                    if agent.get_route()[-1] in ROAD_OPTIONS: 
+                        print("2")
+                    if len(agent.get_route()) < 25:
+                        print("3")
+                    
+                    route = []
+                    while len(route) < MIN_ROUTE_LEN:
                         destination_point = random.choice(self.world.get_map().get_spawn_points()) if self.world.get_map().get_spawn_points() else carla.Transform()
-                    route = self.create_route(agent.get_route()[-1][0].transform.location, destination_point.location)
+                        i = 0
+                        while agent.get_route()[-1][0] == destination_point:
+                            i += 1
+                            if i == 50000:
+                                print("Error: Stuck trying to decide spawn point")
+                            destination_point = random.choice(self.world.get_map().get_spawn_points()) if self.world.get_map().get_spawn_points() else carla.Transform()
+                        route = self.create_route(agent.get_route()[-1][0].transform.location, destination_point.location)
                     agent.set_route(agent.get_route() + route[1:])
 
             junction_distance = 0.0
