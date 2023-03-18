@@ -23,7 +23,7 @@ import carla
 from leaderboard.envs.sensor_interface import CallBack, OpenDriveMapReader, SpeedometerReader, SensorInterface
 from carla_env.sensors.collision_sensor import CollisionSensor, ModCallBack
 from srunner.scenariomanager.timer import GameTime
-from agents.navigation.local_planner import LocalPlanner, RoadOption
+from agents.navigation.local_planner import RoadOption
 from agents.navigation.global_route_planner import GlobalRoutePlanner
 #from agents.navigation.global_route_planner_dao import GlobalRoutePlannerDAO
 from config import REWARD_CRASH, CRASH_SPEED_WEIGHT, MAX_CTE_ERROR, NUM_EPISODES_FOR_MAP_CHANGE, MIN_SPEED, NUM_TICK_WITHOUT_MIN_SPEED
@@ -87,16 +87,18 @@ class CEnvAgent():
         self.info: Dict[str, Any] = None
         self.current_idx: int = 0
         agent_path = os.path.realpath(os.path.dirname(__file__)) + "/../log/" + self.name
+        
         if not os.path.isdir(agent_path):
             os.mkdir(agent_path)
             self.current_idx = 0
         else:
-            onlyfiles = [f for f in os.listdir(agent_path) if os.path.isfile(os.path.join(agent_path, f))]
+            onlyfiles = [f.split(".")[0].split("_")[-1] for f in os.listdir(agent_path) if os.path.isfile(os.path.join(agent_path, f))]
             if len(onlyfiles) > 0:
-                last_idx = int(onlyfiles[-1].split(".")[0].split("_")[-1])
+                last_idx = int(max(onlyfiles))
                 self.current_idx = last_idx + 1
             else:
                 self.current_idx = 0
+
         self.input_noise_function: Callable[[float, float, Optional[Dict[str, Any]]], Tuple[float, float]] = None
 
     def clear(self) -> None:
@@ -550,6 +552,8 @@ class CarlaEnv(gym.Env):
         :param bool save_state: A flag that indicates if the state (sensors) of each agent must be saved
         :param bool save_info: A flag that indicates if the info dict of each agent must be saved
         """
+        if not save_state and not save_info:
+            return
         for idx, agent in enumerate(self.agent_list):
             agent_path = os.path.realpath(os.path.dirname(__file__)) + "/../log/" + agent.get_name()
             state = agent.get_data_dict()
@@ -605,7 +609,7 @@ class CarlaEnv(gym.Env):
             if sensor_description["type"].startswith("sensor.camera."):
                 id = sensor_description["id"]
                 if sensor_idx == 0:
-                    img = self.agent_list[idx].get_data_dict()[id + "_" + mode][1][:,:,0:3]                   
+                    img = self.agent_list[idx].get_data_dict()[id + "_" + mode][1][:,:,0:3]
                     if image_transform != None:
                         img = image_transform(img)
                 else:
@@ -870,7 +874,7 @@ class CarlaEnv(gym.Env):
                         print("1")
                     if agent.get_route()[-1] in ROAD_OPTIONS: 
                         print("2")
-                    if len(agent.get_route()) < 25:
+                    if len(agent.get_route()) < MIN_ROUTE_LEN:
                         print("3")
                     
                     route = []
@@ -1024,13 +1028,13 @@ class CarlaEnv(gym.Env):
             parameters = getattr(carla.WeatherParameters, weather)
         else: 
             parameters = carla.WeatherParameters()
-            parameters.sun_azimuth_angle = np.random.uniform(0,360)
-            parameters.sun_altitude_angle = np.random.uniform(-90,90)
-            parameters.wind_intensity = np.random.uniform(0,100)
-            parameters.mie_scattering_scale = max(0, np.random.normal(0.03, 0.01))
-            parameters.rayleigh_scattering_scale = max(0, np.random.normal(parameters.rayleigh_scattering_scale, parameters.rayleigh_scattering_scale * 0.3))
-            parameters.cloudiness = np.random.uniform(0,100)
-            parameters.precipitation_deposits = np.random.uniform(0,100)
+            parameters.sun_azimuth_angle = np.random.uniform(0.0,360.0)
+            parameters.sun_altitude_angle = np.random.uniform(-90.0,90.0)
+            parameters.wind_intensity = np.random.uniform(0.0,100.0)
+            parameters.mie_scattering_scale = max(0.0, np.random.normal(0.03, 0.01))
+            parameters.rayleigh_scattering_scale = max(0.0, np.random.normal(parameters.rayleigh_scattering_scale, parameters.rayleigh_scattering_scale * 0.3))
+            parameters.cloudiness = np.random.uniform(0.0,100.0)
+            parameters.precipitation_deposits = np.random.uniform(0.0,100.0)
             #parameters.wetness 
             n = random.random()
             if n < 0.25:
@@ -1038,17 +1042,17 @@ class CarlaEnv(gym.Env):
                 pass
             elif n < 0.5:
                 """rain"""
-                parameters.precipitation = np.random.uniform(0,100)
+                parameters.precipitation = np.random.uniform(0.0,100.0)
             elif n < 0.75:
                 """fog"""
-                parameters.fog_density = np.random.uniform(0,100)
-                parameters.fog_distance = max(0, np.random.normal(300, 100))
-                parameters.fog_falloff = np.random.uniform(0,10)
+                parameters.fog_density = np.random.uniform(0.0,100.0)
+                parameters.fog_distance = max(0, np.random.normal(300.0, 100.0))
+                parameters.fog_falloff = np.random.uniform(0.0,10.0)
                 parameters.scattering_intensity = max(np.random.normal(0.03, 0.01), 0)
             else:
                 """sandstorm"""
                 parameters.precipitation_deposits = 0
-                parameters.dust_storm = np.random.uniform(0,100)
+                parameters.dust_storm = np.random.uniform(0.0,100.0)
 
         self.world.set_weather(parameters)
 

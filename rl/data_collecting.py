@@ -33,13 +33,15 @@ class DataCollection():
         self.info_list: List[Dict[str, Any]] = [None]
         '''
                     
-    def run(self, render: bool = False, render_mode: str = "none", input_noise: bool = False, change_map_by_steps: bool = True) -> None:
+    def run(self, render: bool = False, render_mode: str = "none", save_state: bool = True, save_info: bool = True, input_noise: bool = False, change_map_by_steps: bool = True) -> None:
         """
         A function that starts the execution loop
 
         :param bool save_data: A flag that indicates if the step data must be saved
         :param bool render: A flag that indicates if the state must be rendered
-        :param str render: A string that indicates the camera type that will be rendered. If "all" is specified, every type will be rendered and stacked
+        :param str render_mode: A string that indicates the camera type that will be rendered. If "all" is specified, every type will be rendered and stacked
+        :param bool save_state: A flag that indicates if the state will be saved at each step
+        :param bool save_info: A flag that indicates if the info dict will be saved at each step
         :param bool input_noise: A flag that indicates if the loop will apply noise to the controls of the agentsç
         :param bool change_map_by_steps: A flag that indicates if the map should be changed once enough steps have been taken or if enough resets have been taken
         """
@@ -91,7 +93,7 @@ class DataCollection():
                                                                 map_name = map_name, hide_objects = True, hidden_objects_list = COLLECTION_HIDDEN_OBJECTS)
             if render:
                 self.env.render(idx = 0, mode = render_mode)
-            self.env.save_current_step(True, True)
+            self.env.save_current_step(save_state, save_info)
             
             reset_keys()
 
@@ -111,7 +113,7 @@ class DataCollection():
                 if render:
                     self.env.render(idx = 0, mode = render_mode)
                 
-                self.env.save_current_step(True, True)
+                self.env.save_current_step(save_state, save_info)
 
                 if key_pressed["e"] or key_pressed["w"] or key_pressed["q"]:
                     self.game_over_list[0] = True
