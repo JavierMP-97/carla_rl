@@ -2,17 +2,19 @@ import os
 os.environ['TF_GPU_ALLOCATOR'] = 'cuda_malloc_async'
 
 import tensorflow as tf
+'''
 physical_devices = tf.config.list_physical_devices('GPU')
 try:
   tf.config.experimental.set_memory_growth(physical_devices[0], True)
 except:
   # Invalid device or cannot modify virtual devices once initialized.
   pass
-
+'''
 import glob
 import random
 from shutil import copyfile
 from model import create_model
+import gc
 
 @tf.function
 def load_img(img_path):
@@ -158,6 +160,40 @@ def warmup_network(target_lr = 1e-4, num_epochs = 3, base_lr = 1e-6, base_epoch 
             return target_lr
     return _warmup_network
 
+class SaveBestWeightsCallback(tf.keras.callbacks.Callback):
+    def __init__(self, filepath, base_model, monitor = "val_loss", verbose = 0):
+        super(SaveBestWeightsCallback, self).__init__()
+        self.filepath = filepath
+        self.best_val_loss = None
+        self.monitor = monitor
+        self.verbose = verbose
+        self.base_model = base_model
+        
+    def on_epoch_end(self, epoch, logs=None):
+        current_val_loss = logs[self.monitor]
+        if self.best_val_loss == None or current_val_loss < self.best_val_loss:
+            # Save the current weights as the best weights so far
+            self.best_val_loss = current_val_loss
+
+            layer_trainable_states = []
+            # Save the current trainable state of every layer
+            for layer in self.base_model.layers:
+                layer_trainable_states.append(layer.trainable)
+
+            # Set the trainable state of every layer to True
+            for layer in self.base_model.layers:
+                layer.trainable = True
+
+            # Save the model weights
+            self.model.save_weights(self.filepath)
+
+            # Return the trainable state of every layer to the previous value
+            for i, layer in enumerate(self.base_model.layers):
+                layer.trainable = layer_trainable_states[i]
+
+            if self.verbose > 0:
+                print('Saved best weights at epoch', epoch)
+            
 SIDE_IMAGES = True
 MODEL_NAME = "mobilenetv3"
 
@@ -166,13 +202,20 @@ warmup_lr = 1e-6
 first_train_lr = 1e-4
 fine_tune_lr = 1e-4
 warmup_epochs = 3
-epochs = 40
-freeze_level = 9
-batch_size = 56
+epochs = 100
+freeze_level = 5
+batch_size = 32
 unfreeze_steps = 1
 fully_unfreeze = True
 
-EXPERIMENT_NAME = "MN3-lr-4-clipvalue.2x1" #"MN3-extra1000conv-noweights"
+weights_path = "D:/PC-Javier/Desktop/Carla14/carla_rl/carla_agents/conditional_imitation_learning/logs/MN3-freeze5-epochs100-steps1-lr-4-clipvalue.2x1/weights_step_0.hdf5"
+starting_step = 1
+if weights_path == None:
+    starting_step = 0
+if starting_step > unfreeze_steps:
+    starting_step = unfreeze_steps
+
+EXPERIMENT_NAME = "MN3-freeze5-epochs100-steps1-lr-4-clipvalue.2x1_1" #"MN3-extra1000conv-noweights"
 if (EXPERIMENT_NAME != None and EXPERIMENT_NAME != ""):
     current_path = os.path.realpath(os.path.dirname(__file__))
     if os.path.isdir(current_path + "/logs/" + EXPERIMENT_NAME):
@@ -186,54 +229,71 @@ if (EXPERIMENT_NAME != None and EXPERIMENT_NAME != ""):
 
 dataset_list = create_tf_dataset(n_instances = n_instances, side_images = SIDE_IMAGES, batch_size = batch_size, preload_images = (n_instances<=30000), model_name = MODEL_NAME)
 
-model, base_model, model_stages = create_model(side_images = SIDE_IMAGES, model_name = MODEL_NAME)
+model, base_model, model_stages = create_model(side_images = SIDE_IMAGES, model_name = MODEL_NAME, weights_path = weights_path)
 if model_stages[0] != 0:
     model_stages = [0] + model_stages
 
 cb = []
 #cb.append(tf.keras.callbacks.ReduceLROnPlateau(factor=0.2, patience=5))
+cb.append(tf.keras.callbacks.LambdaCallback(on_epoch_end = lambda epoch, logs: gc.collect()))
 if (EXPERIMENT_NAME != None and EXPERIMENT_NAME != ""):
-    cb.append(tf.keras.callbacks.ModelCheckpoint(current_path + "/logs/" + EXPERIMENT_NAME + "/best_weights.hdf5", monitor = 'val_loss', save_best_only = True, save_weights_only = True))
+    cb.append(SaveBestWeightsCallback(current_path + "/logs/" + EXPERIMENT_NAME + "/best_weights.hdf5", base_model=base_model, monitor = 'val_loss', verbose=1))
     cb.append(tf.keras.callbacks.TensorBoard(log_dir = current_path + "/logs/" + EXPERIMENT_NAME))
 
 
 #model.load_weights("model_weights.hdf5")
 
 base_model.trainable = True
-
-curr_epoch = 0
+curr_lr = 0
+clip_norm = 0
 last_loss = 0
-for unfreeze_step in range(unfreeze_steps + 1):
+if unfreeze_steps < 0:
+    unfreeze_steps = 0
+if freeze_level <= 0:
+    unfreeze_steps = 0
+if unfreeze_steps > freeze_level:
+    unfreeze_steps = freeze_level
+for unfreeze_step in range(starting_step, unfreeze_steps + 1):
+    curr_epoch = unfreeze_step * (warmup_epochs + epochs)
     base_model.trainable = True
     curr_freeze_level = freeze_level
     if fully_unfreeze:
-        curr_freeze_level -= int(freeze_level * (unfreeze_step / unfreeze_steps))
+        if unfreeze_steps != 0:
+            curr_freeze_level -= int(freeze_level * (unfreeze_step / unfreeze_steps))
+        else:
+            curr_freeze_level = 0
     else:
         curr_freeze_level -= unfreeze_step
+        
     if freeze_level > 0 and (not fully_unfreeze or unfreeze_step < unfreeze_steps):
         for l in base_model.layers[:model_stages[curr_freeze_level]]:
             l.trainable = False
 
-    # optimizer=tf.keras.optimizers.experimental.SGD(learning_rate = lr, momentum = 0.9)
-    # optimizer=tf.keras.optimizers.experimental.RMSprop(learning_rate = lr, momentum = 0.9, use_ema=True)
-    # optimizer=tf.keras.optimizers.Adam(lr)
-
-    curr_lr = fine_tune_lr
-    clip_norm = last_loss * 1
+    if unfreeze_step == starting_step:  
+        clip_norm = 0.2
+    else:
+        clip_norm = last_loss * 1
+        
     if unfreeze_step == 0:
-        curr_lr = first_train_lr  
-        clip_norm = 0.2  
+        curr_lr = first_train_lr
+    else:
+        curr_lr = fine_tune_lr
 
     model.compile(optimizer=tf.keras.optimizers.experimental.RMSprop(learning_rate = curr_lr, momentum = 0.9, use_ema=True, clipvalue=clip_norm),#, use_ema = True),
                 loss=tf.keras.losses.MeanSquaredError(),
                 metrics=[tf.keras.metrics.MeanSquaredError(),tf.keras.metrics.MeanAbsoluteError()])
-
     cb.append(tf.keras.callbacks.LearningRateScheduler(warmup_network(target_lr = curr_lr, num_epochs = warmup_epochs, base_lr=warmup_lr, base_epoch=curr_epoch)))
 
     h = model.fit(dataset_list[0], epochs = curr_epoch + warmup_epochs + epochs, initial_epoch = curr_epoch, validation_data = dataset_list[1], callbacks = cb)
     last_loss = h.history['loss'][-1]
-    
-    curr_epoch += warmup_epochs + epochs
+
     cb = cb[:-1]
     if (EXPERIMENT_NAME != None and EXPERIMENT_NAME != ""):
+        saved_layer_states = []
+        for l in base_model.layers:
+            saved_layer_states.append(l.trainable)
+            l.trainable = True
         model.save_weights(current_path + "/logs/" + EXPERIMENT_NAME + "/weights_step_{}.hdf5".format(unfreeze_step))
+        for l, layer_state in zip(base_model.layers, saved_layer_states):
+            l.trainable = layer_state
+        
