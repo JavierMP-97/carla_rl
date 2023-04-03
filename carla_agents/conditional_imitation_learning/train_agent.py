@@ -1,5 +1,5 @@
 import os
-os.environ['TF_GPU_ALLOCATOR'] = 'cuda_malloc_async'
+os.environ['TF_GPU_ALLOCATOR'] = 'cuda_malloc_async'    
 
 import tensorflow as tf
 '''
@@ -21,11 +21,13 @@ def load_img(img_path):
     encoded_image = tf.io.read_file(img_path)
     return encoded_image
 
-def decode_img(vgg16 = False):
-    if vgg16:
+def decode_img(model_name = "mobilenetv3"):
+    if model_name == "vgg16":
         preprocess_fun = tf.keras.applications.vgg16.preprocess_input
-    else:
+    elif model_name == "mobilenetv3":
         preprocess_fun = tf.keras.applications.mobilenet_v3.preprocess_input
+    elif model_name == "efficientnetv2":
+        preprocess_fun = tf.keras.applications.efficientnet_v2.preprocess_input
     @tf.function
     def _decode_img(encoded_img):
         image = tf.io.decode_png(encoded_img)
@@ -33,28 +35,28 @@ def decode_img(vgg16 = False):
         image = preprocess_fun(image)
         return image
     return _decode_img
-def decode_info(mobilenetv3 = True):
+def decode_info(conv_output = True):
     @tf.function
     def _decode_info(info_path):
         txt = tf.io.read_file(info_path)
         txt = tf.io.decode_csv(txt, [float(), int()], select_cols = [3, 6])
         label = txt[0]
         command = tf.one_hot(txt[1], 3)
-        if mobilenetv3:
+        if conv_output:
             command = tf.reshape(command, [1,1,3])
         return label, command
     return _decode_info
 
 
-def load_data(side_images = False, mobilenetv3 = True):
+def load_data(side_images = False, conv_output = True):
     @tf.function
     def _load_data(info_path, img_path):
-        label, command = decode_info(mobilenetv3)(info_path)
+        label, command = decode_info(conv_output)(info_path)
         encoded_image = load_img(img_path = img_path)
         return (encoded_image, command, label)
     @tf.function
     def _load_full_data(info_path, left_img_path, middle_img_path, right_img_path):
-        label, command = decode_info(mobilenetv3)(info_path)
+        label, command = decode_info(conv_output)(info_path)
         encoded_left_image = load_img(img_path = left_img_path)
         encoded_middle_image = load_img(img_path = middle_img_path)
         encoded_right_image = load_img(img_path = right_img_path)
@@ -65,17 +67,17 @@ def load_data(side_images = False, mobilenetv3 = True):
     else:
         return _load_data
 
-def decode_data(side_images = False, vgg16 = False):
+def decode_data(side_images = False, model_name = "mobilenetv3"):
     @tf.function
     def _decode_data(encoded_image, command, label):
-        image = decode_img(vgg16)(encoded_image)
+        image = decode_img(model_name)(encoded_image)
         return {"image":image, "command": command}, label
         #return (image, command), label
     @tf.function
     def _decode_full_data(encoded_left_image, encoded_middle_image, encoded_right_image, command, label):
-        left_image = decode_img(vgg16)(encoded_left_image)
-        middle_image = decode_img(vgg16)(encoded_middle_image)
-        right_image = decode_img(vgg16)(encoded_right_image)
+        left_image = decode_img(model_name)(encoded_left_image)
+        middle_image = decode_img(model_name)(encoded_middle_image)
+        right_image = decode_img(model_name)(encoded_right_image)
         image = tf.concat([left_image, middle_image, right_image], 0)
         return {"image":image, "command": command}, label
     
@@ -86,10 +88,15 @@ def decode_data(side_images = False, vgg16 = False):
 
 def create_tf_dataset(n_instances = 400000, instances_per_map = 200000, n_maps = 2, split = 0.75, batch_size = 128, preload_images = False, side_images = False, model_name = "mobilenetv3"):
 
-    left_path = glob.glob("D:/PC-Javier/Desktop/Carla14/carla_rl/log/agente/left_rgb_*.png")
+    if side_images:
+        left_path = glob.glob("D:/PC-Javier/Desktop/Carla14/carla_rl/log/agente/left_rgb_*.png")
+        right_path = glob.glob("D:/PC-Javier/Desktop/Carla14/carla_rl/log/agente/right_rgb_*.png")
+        left_path.sort()
+        right_path.sort()
     middle_path = glob.glob("D:/PC-Javier/Desktop/Carla14/carla_rl/log/agente/middle_rgb_*.png")
-    right_path = glob.glob("D:/PC-Javier/Desktop/Carla14/carla_rl/log/agente/right_rgb_*.png")
     info_path = glob.glob("D:/PC-Javier/Desktop/Carla14/carla_rl/log/agente/info_*.txt")
+    middle_path.sort()
+    info_path.sort()
     train_dict = {"left":[], "middle":[], "right": [], "info": []}
     test_dict = {"left":[], "middle":[], "right": [], "info": []}
 
@@ -107,7 +114,7 @@ def create_tf_dataset(n_instances = 400000, instances_per_map = 200000, n_maps =
         for train_instance_idx in range(train_split_per_map):
             random_train_instance_idx = (m * instances_per_map) + random_train_indexes[train_instance_idx]
             if side_images:
-                train_dict["left"].append(left_path[ random_train_instance_idx])
+                train_dict["left"].append(left_path[random_train_instance_idx])
                 train_dict["right"].append(right_path[random_train_instance_idx])
             train_dict["middle"].append(middle_path[random_train_instance_idx])
             train_dict["info"].append(info_path[random_train_instance_idx])
@@ -131,33 +138,34 @@ def create_tf_dataset(n_instances = 400000, instances_per_map = 200000, n_maps =
             loaded_dataset = None #tf.data.Dataset.from_tensor_slices(input_tuple).map(load_data(side_images = side_images), num_parallel_calls=tf.data.AUTOTUNE, deterministic=False)
             decoded_dataset = None
             if preload_images:
-                loaded_dataset = tf.data.Dataset.from_tensor_slices(input_tuple).map(load_data(side_images = side_images, mobilenetv3 = (model_name == "mobilenetv3")), num_parallel_calls=tf.data.AUTOTUNE, deterministic=False)
-                decoded_dataset = loaded_dataset.map(decode_data(side_images = side_images, vgg16 = (model_name == "vgg16")), num_parallel_calls=tf.data.AUTOTUNE, deterministic=False)
+                loaded_dataset = tf.data.Dataset.from_tensor_slices(input_tuple).map(load_data(side_images = side_images, conv_output = (model_name == "mobilenetv3")), num_parallel_calls=tf.data.AUTOTUNE, deterministic=False)
+                decoded_dataset = loaded_dataset.map(decode_data(side_images = side_images, model_name = model_name), num_parallel_calls=tf.data.AUTOTUNE, deterministic=False)
                 decoded_dataset = decoded_dataset.cache()
                 if dataset_idx == 0:
                     decoded_dataset = decoded_dataset.shuffle(int(train_split_per_map * n_maps), reshuffle_each_iteration=True)
             else:
-                loaded_dataset = tf.data.Dataset.from_tensor_slices(input_tuple).map(load_data(side_images = side_images, mobilenetv3 = (model_name == "mobilenetv3")), num_parallel_calls=tf.data.AUTOTUNE, deterministic=False).cache()
+                loaded_dataset = tf.data.Dataset.from_tensor_slices(input_tuple).map(load_data(side_images = side_images, conv_output = (model_name == "mobilenetv3")), num_parallel_calls=tf.data.AUTOTUNE, deterministic=False).cache()
                 if dataset_idx == 0:
                     loaded_dataset = loaded_dataset.shuffle(int(train_split_per_map * n_maps), reshuffle_each_iteration=True)
-                decoded_dataset = loaded_dataset.map(decode_data(side_images = side_images, vgg16 = (model_name == "vgg16")), num_parallel_calls=tf.data.AUTOTUNE, deterministic=False)
+                decoded_dataset = loaded_dataset.map(decode_data(side_images = side_images, model_name = model_name), num_parallel_calls=tf.data.AUTOTUNE, deterministic=False)
             decoded_dataset = decoded_dataset.batch(batch_size, drop_remainder=True).prefetch(tf.data.AUTOTUNE)
         dataset_list.append(decoded_dataset)
 
     return dataset_list
 
-def warmup_network(target_lr = 1e-4, num_epochs = 3, base_lr = 1e-6, base_epoch = 0):
+def warmup_network(base_lr = 1e-4, warmup_epochs = 0, warmup_lr = 1e-6, initial_epoch = 0, training_epochs = 20, target_lr = 1e-4):
     def _warmup_network(epoch, lr):
-        if num_epochs > 0:
-            new_epoch = epoch - base_epoch
-            lr_ratio = target_lr / base_lr
-            lr_step_mult = lr_ratio ** (1/(num_epochs))
-            if new_epoch < num_epochs:
-                return base_lr * (lr_step_mult ** new_epoch)
-            else:
-                return target_lr
+        new_epoch = epoch - initial_epoch
+        if new_epoch < warmup_epochs:
+            lr_ratio = base_lr / warmup_lr
+            lr_step_mult = lr_ratio ** (1/(warmup_epochs))
+            return warmup_lr * (lr_step_mult ** new_epoch)
         else:
-            return target_lr
+            new_epoch = new_epoch - warmup_epochs
+            lr_ratio =  target_lr / base_lr
+            lr_step_mult = lr_ratio ** (1/(training_epochs))
+            return base_lr * (lr_step_mult ** new_epoch)
+        
     return _warmup_network
 
 class SaveBestWeightsCallback(tf.keras.callbacks.Callback):
@@ -195,27 +203,27 @@ class SaveBestWeightsCallback(tf.keras.callbacks.Callback):
                 print('Saved best weights at epoch', epoch)
             
 SIDE_IMAGES = True
-MODEL_NAME = "mobilenetv3"
+MODEL_NAME = "efficientnetv2"#"mobilenetv3"
 
 n_instances = 30000
 warmup_lr = 1e-6
-first_train_lr = 1e-4
-fine_tune_lr = 1e-4
+base_lr = 1e-5
+target_lr = 1e-6
 warmup_epochs = 3
 epochs = 100
-freeze_level = 5
-batch_size = 32
-unfreeze_steps = 1
+freeze_level = 0
+batch_size = 16
+unfreeze_steps = 0
 fully_unfreeze = True
 
-weights_path = "D:/PC-Javier/Desktop/Carla14/carla_rl/carla_agents/conditional_imitation_learning/logs/MN3-freeze5-epochs100-steps1-lr-4-clipvalue.2x1/weights_step_0.hdf5"
-starting_step = 1
+weights_path = None #"D:/PC-Javier/Desktop/Carla14/carla_rl/carla_agents/conditional_imitation_learning/logs/MN3-freeze18-freeze9/weights_step_1.hdf5"
+starting_step = 2
 if weights_path == None:
     starting_step = 0
 if starting_step > unfreeze_steps:
     starting_step = unfreeze_steps
 
-EXPERIMENT_NAME = "MN3-freeze5-epochs100-steps1-lr-4-clipvalue.2x1_1" #"MN3-extra1000conv-noweights"
+EXPERIMENT_NAME = "EN2_lr1e-5-6" 
 if (EXPERIMENT_NAME != None and EXPERIMENT_NAME != ""):
     current_path = os.path.realpath(os.path.dirname(__file__))
     if os.path.isdir(current_path + "/logs/" + EXPERIMENT_NAME):
@@ -248,11 +256,17 @@ curr_lr = 0
 clip_norm = 0
 last_loss = 0
 if unfreeze_steps < 0:
+    print("unfreeze_steps must be at least 0 (unfreeze_steps set to 0)")
     unfreeze_steps = 0
 if freeze_level <= 0:
+    print("if every layer is trainable you don't have to take steps to unfreeze them (unfreeze_steps set to 0)")
     unfreeze_steps = 0
 if unfreeze_steps > freeze_level:
+    print("the maximum number of steps to unfreeze the layers is the number of layers frozen (unfreeze_steps set to freeze_level)")
     unfreeze_steps = freeze_level
+if fully_unfreeze and freeze_level > 0 and unfreeze_steps <= 0:
+    print("if the network must be fully unfrozen by the end of the training, it should take at least one step to unfreeze it (unfreeze_steps set to 1)")
+    unfreeze_steps = 1
 for unfreeze_step in range(starting_step, unfreeze_steps + 1):
     curr_epoch = unfreeze_step * (warmup_epochs + epochs)
     base_model.trainable = True
@@ -271,18 +285,17 @@ for unfreeze_step in range(starting_step, unfreeze_steps + 1):
 
     if unfreeze_step == starting_step:  
         clip_norm = 0.2
+        #clip_norm = 0.0034
+        #clip_norm = 0.0001
     else:
         clip_norm = last_loss * 1
-        
-    if unfreeze_step == 0:
-        curr_lr = first_train_lr
-    else:
-        curr_lr = fine_tune_lr
 
-    model.compile(optimizer=tf.keras.optimizers.experimental.RMSprop(learning_rate = curr_lr, momentum = 0.9, use_ema=True, clipvalue=clip_norm),#, use_ema = True),
+    print(curr_freeze_level)
+    
+    model.compile(optimizer=tf.keras.optimizers.experimental.RMSprop(learning_rate = base_lr, momentum = 0.9, use_ema=True, clipvalue=clip_norm),#, use_ema = True),
                 loss=tf.keras.losses.MeanSquaredError(),
                 metrics=[tf.keras.metrics.MeanSquaredError(),tf.keras.metrics.MeanAbsoluteError()])
-    cb.append(tf.keras.callbacks.LearningRateScheduler(warmup_network(target_lr = curr_lr, num_epochs = warmup_epochs, base_lr=warmup_lr, base_epoch=curr_epoch)))
+    cb.append(tf.keras.callbacks.LearningRateScheduler(warmup_network(base_lr = base_lr, warmup_epochs = warmup_epochs, warmup_lr = warmup_lr, initial_epoch = curr_epoch, training_epochs = epochs, target_lr = target_lr)))
 
     h = model.fit(dataset_list[0], epochs = curr_epoch + warmup_epochs + epochs, initial_epoch = curr_epoch, validation_data = dataset_list[1], callbacks = cb)
     last_loss = h.history['loss'][-1]
@@ -296,4 +309,6 @@ for unfreeze_step in range(starting_step, unfreeze_steps + 1):
         model.save_weights(current_path + "/logs/" + EXPERIMENT_NAME + "/weights_step_{}.hdf5".format(unfreeze_step))
         for l, layer_state in zip(base_model.layers, saved_layer_states):
             l.trainable = layer_state
-        
+    
+    tf.keras.backend.clear_session()
+    gc.collect()

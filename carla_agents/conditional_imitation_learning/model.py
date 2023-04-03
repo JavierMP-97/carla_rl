@@ -10,6 +10,7 @@ def create_model(side_images = False, weights_path = None, model_name = "mobilen
     model_stages = []
 
     if model_name == "vgg16":
+        model_stages = [0]
         inputs = tf.keras.Input(shape=input_shape, name = "image")
         input2 = tf.keras.Input(shape=(3), name = "command")
         base_model = tf.keras.applications.vgg16.VGG16(input_shape=input_shape, weights = "imagenet", include_top=False)
@@ -40,7 +41,17 @@ def create_model(side_images = False, weights_path = None, model_name = "mobilen
         x = tf.keras.layers.Conv2D(1000,1, activation = "gelu", kernel_initializer = tf.keras.initializers.HeNormal())(x)
         conv = tf.keras.layers.Conv2D(1,1)(x)
         output = tf.keras.layers.Flatten()(conv)
-
+        
+    if model_name == "efficientnetv2":
+        model_stages = [0]
+        inputs = tf.keras.Input(shape=input_shape, name = "image")
+        input2 = tf.keras.Input(shape=(3), name = "command")
+        base_model = tf.keras.applications.efficientnet_v2.EfficientNetV2S(input_shape=input_shape, weights = "imagenet", include_top=False, pooling="avg")
+        x = base_model(inputs, training=False)
+        x = tf.keras.layers.Concatenate()([x, input2])
+        x = tf.keras.layers.Dense(1000, activation = "gelu", kernel_initializer = tf.keras.initializers.HeNormal())(x)
+        output = tf.keras.layers.Dense(1)(x)
+        
     model = tf.keras.Model({"image":inputs, "command": input2}, output)
     #last_stage_model.trainable = True
     if verbose > 0:
