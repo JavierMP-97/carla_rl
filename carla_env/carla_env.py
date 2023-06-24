@@ -86,6 +86,7 @@ class CEnvAgent():
         self.data_dict: Dict[str, Tuple[int, Any]] = None
         self.info: Dict[str, Any] = None
         self.current_idx: int = 0
+        self.current_episode_idx: int = 0
         agent_path = os.path.realpath(os.path.dirname(__file__)) + "/../log/" + self.name
         
         if not os.path.isdir(agent_path):
@@ -195,6 +196,8 @@ class CEnvAgent():
         return self.info
     def get_current_idx(self) -> int:
         return self.current_idx
+    def get_current_episode_idx(self) -> int:
+        return self.current_episode_idx
     def get_input_noise_function(self) -> Callable[[float, float, Optional[Dict[str, Any]]], Tuple[float, float]]:
         return self.input_noise_function
 
@@ -254,6 +257,8 @@ class CEnvAgent():
         self.info = info
     def set_current_idx(self, current_idx: int):
         self.current_idx = current_idx
+    def set_current_episode_idx(self, current_episode_idx: int):
+        self.current_episode_idx = current_episode_idx
     def set_input_noise_function(self, input_noise_function: Callable[[float, float, Optional[Dict[str, Any]]], Tuple[float, float]]):
         self.input_noise_function = input_noise_function
     
@@ -296,9 +301,7 @@ class CarlaEnv(gym.Env):
 
         self.spawn_index: int = 0
 
-        self.agent_list: List[CEnvAgent] = []
-
-        
+        self.agent_list: List[CEnvAgent] = []        
 
         for agent_idx, (an, sd, vd) in enumerate(zip(agent_names, sensor_descriptions, vehicle_description)):
             self.agent_list.append(CEnvAgent(an, vd, sd))
@@ -567,7 +570,7 @@ class CarlaEnv(gym.Env):
                     if sensor["type"].startswith("sensor.camera."):
                         for camera_type in self.camera_types:
                             data = state[sensor["id"] + "_" + camera_type][1][:,:,0:3]
-                            cv2.imwrite(agent_path + "/" + sensor["id"] + "_" + camera_type + "_" + str(agent.get_current_idx()).zfill(7) + ".png", data)
+                            cv2.imwrite(agent_path + "/" + sensor["id"] + "_" + camera_type + "_" + str(agent.get_current_idx()).zfill(7) + "_" + str(agent.get_current_episode_idx()).zfill(7) + ".png", data)
                     elif sensor["type"] == 'sensor.speedometer':
                         if state_string != "":
                             state_string += ","
@@ -584,7 +587,7 @@ class CarlaEnv(gym.Env):
                     if file_name != "":
                         file_name += "_"
                     file_name += sensor_name
-                file = open(agent_path + "/" + file_name + "_" + str(agent.get_current_idx()).zfill(7) + ".txt", "w")
+                file = open(agent_path + "/" + file_name + "_" + str(agent.get_current_idx()).zfill(7) + "_" + str(agent.get_current_episode_idx()).zfill(7) + ".txt", "w")
                 file.write(state_string)
                 file.close()
             if save_info:
@@ -597,11 +600,12 @@ class CarlaEnv(gym.Env):
                         info_string += str(info[key])
                         file_name += sensor_name
 
-                file = open(agent_path + "/" + "info_" + str(agent.get_current_idx()).zfill(7) + ".txt", "w")
+                file = open(agent_path + "/" + "info_" + str(agent.get_current_idx()).zfill(7) + "_" + str(agent.get_current_episode_idx()).zfill(7) + ".txt", "w")
                 file.write(info_string)
                 file.close()
 
             agent.set_current_idx(agent.get_current_idx() + 1)
+            agent.set_current_episode_idx(agent.get_current_episode_idx() + 1)
 
     def _concatenate_sensors(self, idx: int = 0, mode: str ='rgb', image_transform: Optional[Callable[[np.ndarray], np.ndarray]] = None ) -> np.ndarray:
         img = None
@@ -649,7 +653,6 @@ class CarlaEnv(gym.Env):
         """
 
         for vehicle_idx, agent in enumerate(self.agent_list):
-            
             vehicle_name = agent.get_vehicle_description()[0]
             vehicle_attributes = agent.get_vehicle_description()[1]
             if respawn:
@@ -710,7 +713,7 @@ class CarlaEnv(gym.Env):
                 new_route_transform.location.z = rt.location.z + 0.2
                 self.agent_list[vehicle_idx].get_actor().set_transform(new_route_transform)
             self.agent_list[vehicle_idx].set_route(route)
-
+            self.agent_list[vehicle_idx].set_current_episode_idx(0)
         # sync state
         self._tick()
 

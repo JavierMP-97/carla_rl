@@ -43,7 +43,7 @@ def create_model(side_images = False, weights_path = None, model_name = "mobilen
         output = tf.keras.layers.Flatten()(conv)
         
     if model_name == "efficientnetv2":
-        model_stages = [0]
+        model_stages = [4,13,39,65,153,286,509,512]
         inputs = tf.keras.Input(shape=input_shape, name = "image")
         input2 = tf.keras.Input(shape=(3), name = "command")
         base_model = tf.keras.applications.efficientnet_v2.EfficientNetV2S(input_shape=input_shape, weights = "imagenet", include_top=False, pooling="avg")
@@ -58,7 +58,7 @@ def create_model(side_images = False, weights_path = None, model_name = "mobilen
         print(base_model.summary())
         print(model.summary())
     #model = tf.keras.Model((inputs, input2), outputs)
-    
+
     if weights_path != None:
         model.load_weights(weights_path)
 
