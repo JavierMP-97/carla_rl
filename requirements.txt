@@ -1,0 +1,7 @@
+gymnasium
+keyboard
+numpy
+opencv-python
+scipy
+tensorflow
+keras

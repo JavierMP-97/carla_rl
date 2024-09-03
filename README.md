@@ -7,3 +7,5 @@ This library offers an intuitive and user-friendly gym environment for data coll
 - **Example Agent**: Includes a straightforward Conditional Imitation Learning (CIL) Agent to demonstrate how to build and train your own custom agents.
 
 Get started quickly with our comprehensive documentation and example scripts to accelerate your autonomous driving research and development.
+
+**Note**: CARLA Leaderboard and Scenario Runner must be installed alongside this library to ensure full functionality.
